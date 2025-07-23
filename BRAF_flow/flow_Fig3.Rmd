@@ -18,11 +18,11 @@ library(tidyverse)
 # README
 Input files for this code are:
 --- for pERK
-11.20_all_samples.csv
-11.21_all_samples.csv
-11.22_all_samples.csv
+BRAF_flow/11.20_all_samples.csv
+BRAF_flow/11.21_all_samples.csv
+BRAF_flow/11.22_all_samples.csv
 --- for pMEK
-supplementary_controls/11.25_all_samples_live.csv
+BRAF_flow/supplementary_controls/11.25_all_samples_live.csv
 
 
 ## Define here how you order samples and conditions (important for plots)
@@ -46,18 +46,18 @@ colors <- c("mEGFP-BRAF\nWT" = "#335b8e", #"#275066",
 This has already been gated and filtered by area and height to remove cell debris and cell clumps in FlowJo
 (based on FSC_A, FSC_H, SSC_A, and SSC_H values)
 ```{r, message=FALSE, warning=FALSE}
-data1 <- read_delim(file = "11.20_all_samples.csv") |> 
+data1 <- read_delim(file = "BRAF_flow/11.20_all_samples.csv") |> 
   add_column("replicate" = "rep1") |> 
   filter(! condition == "2nd_only")
 samples_data1 <- data1 |> 
   pull(sample) |> unique()
-data2 <- read_delim(file = "11.21_all_samples.csv") |> 
+data2 <- read_delim(file = "BRAF_flow/11.21_all_samples.csv") |> 
   add_column("replicate" = "rep1") |> 
   mutate("replicate" = case_when(
     sample %in% samples_data1 ~ "rep2",
     .default = replicate
   ))
-data3 <- read_delim(file = "11.22_all_samples.csv") |> 
+data3 <- read_delim(file = "BRAF_flow/11.22_all_samples.csv") |> 
   add_column("replicate" = "rep3") |> 
   mutate("replicate" = case_when(
     sample %in% samples_data1 ~ "rep3",
@@ -405,7 +405,7 @@ ggsave("GFP_rep1_flow_for_talks.pdf", height = 2, width = 5)
 
 ## Plot the pMEK data using the same 2d density plot
 ```{r, message = FALSE, warning = FALSE}
-pmek_data <- read_csv("supplementary_controls/11.25_all_samples_live.csv")
+pmek_data <- read_csv("BRAF_flow/supplementary_controls/11.25_all_samples_live.csv")
 pmek_data <- pmek_data |> 
   mutate("sample" = 
           case_when(

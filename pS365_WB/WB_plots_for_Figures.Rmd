@@ -35,7 +35,7 @@ conditions_for_plotting_in_order <- c("Full", "Starved", "5 min EGF")
 
 # Load all the data (all the replicates)
 ```{r, message=FALSE, warning = FALSE}
-WB_data <- read_tsv("2025_pS365_WB_SIGNAL_quantification_for_paper_all_replicates.txt")
+WB_data <- read_tsv("pS365_WB/2025_pS365_WB_SIGNAL_quantification_for_paper_all_replicates.txt")
 ```
 
 

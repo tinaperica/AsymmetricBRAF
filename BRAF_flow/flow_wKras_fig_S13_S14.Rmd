@@ -18,7 +18,7 @@ library(tidyverse)
 
 # README
 Input file
-KRAS_BRAF_flow/11.27_all_samples.csv
+BRAF_flow/KRAS_BRAF_flow/11.27_all_samples.csv
 
 
 
@@ -45,7 +45,7 @@ colors <- c("mEGFP-BRAF\nWT" = "#335b8e", #"#275066",
 ```
 
 ```{r, message=FALSE, warning=FALSE}
-data <- read_csv("KRAS_BRAF_flow/11.27_all_samples.csv") 
+data <- read_csv("BRAF_flow/KRAS_BRAF_flow/11.27_all_samples.csv") 
 data |> 
   pull(sample) |> unique()
 ```
