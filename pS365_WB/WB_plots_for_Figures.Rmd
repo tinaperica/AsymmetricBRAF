@@ -1,0 +1,317 @@
+---
+title: "BRAF pS365 WB"
+author: "Tina Perica"
+date: "2025-03-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = F, warning=FALSE}
+library(tidyverse)
+```
+##Experimental setup:
+- HEK293T cell line
+- Transfected with pgk-mCherryKRAS and one of the pgk-meGFP-BRAF variants: WT, AAAA, A481F, AAAA+A481F, S365A (as negative cotnrol) and R188L
+- Starved for 2 hours without FCS and then stimulated with 10 ng/ml of hEGF for 5 min
+- Western blot with antibody for pERK/ERK (active ERK1/2) or CRAF/BRAF pS365 and  anti-GFP
+- if possible, 35-50 ug of protein loaded in each well, depending on the yield
+
+```{r}
+colors <- c("WT" = "#335b8e", #"#275066",
+               "AAAA" = "#fe6d7e", # "#881f24",
+               "A481F" = "#f19167", # "#bb9d79",
+               "AAAA A481F" = "#e8aa9d", # "#944c34",
+                "R188L" = "#899DA4"
+            )
+colors_conditions <- c("Full" = "#a33a36",
+                        "Starved" = "#b66e56",
+                        "5 min EGF" = "#313167")
+conditions_for_plotting_in_order <- c("Full", "Starved", "5 min EGF")
+
+```
+
+# Load all the data (all the replicates)
+```{r, message=FALSE, warning = FALSE}
+WB_data <- read_tsv("2025_pS365_WB_SIGNAL_quantification_for_paper_all_replicates.txt")
+```
+
+
+
+```{r}
+WB_data <- WB_data |> 
+  mutate(pERK_rel = pERK/ERK,
+         pS365_rel = BRAF_pS365/GFP) |> 
+  mutate(CRAF_pS259 = CRAF_pS259/`total protein`) |> 
+  filter(! is.na(BRAF_mutant)) |> 
+  mutate("BRAF_mutant" = factor(BRAF_mutant, 
+          c("WT", "AAAA", "A481F", "AAAA A481F", "S365A", "R188L"))) |>
+  mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starved" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF"
+  )) |> 
+  mutate("condition" = factor(condition, conditions_for_plotting_in_order)) |> 
+  arrange(BRAF_mutant, condition) 
+```
+
+
+# Normalized to GFP and plot per construct
+```{r}
+WB_data |> 
+  filter(! BRAF_mutant == "S365A") |> 
+  ggplot(aes(x = BRAF_mutant, y = pS365_rel, fill = condition)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.5, alpha = 0.9) +
+  scale_fill_manual(values = colors_conditions) +
+  labs(title = "mEGFP-BRAF pS365 normalized to GFP signal", 
+       x = "BRAF mutant", y = "Normalized Western Blot signal", fill = "Condition") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 6),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1)
+  ) +
+  facet_grid(~replicate)
+#ggsave("GFP_BRAF_pS365_normalized_to_GFP_signal_per_construct_all_replicates.pdf", width = 5, height = 2)
+```
+
+
+## Plot replicate 4 (750 ng BRAF only) and replicate 3 (750 ng BRAF + 750 ng KRAS)
+This plot is for supplementary figure (fig. S13A) to show we need to co-express KRAS to see dephosphorylation of pS365 in overexpressed BRAF.  
+This makes sense because we need sufficient amounts of KRAS to localize all the overexpressed BRAF on the membrane - pS365 dephosphorylation can only occur on the membrane.  
+```{r}
+WB_data |> 
+  filter(replicate %in% c(3,4)) |> 
+  filter(! BRAF_mutant == "S365A") |> 
+  ggplot(aes(x = BRAF_mutant, y = pS365_rel, fill = condition)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.5, alpha = 0.9) +
+  scale_fill_manual(values = colors_conditions) +
+  labs(title = "mEGFP-BRAF pS365 levels normalized to GFP", 
+       x = "BRAF mutant", y = "Normalized Western Blot signal", fill = "Condition") +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  facet_grid(~transfection)
+ggsave("WB_S365_KRAS_coexpression_needed.pdf", width = 4.5, height = 3)
+```
+
+
+
+# Normalized to GFP and then to full/starved
+ - per replicate
+```{r}
+full_condition_data <- WB_data |> 
+  filter(condition == "Full") |> 
+  select(replicate, BRAF_mutant, "pS365_at_full" = pS365_rel)
+WB_data |> 
+  inner_join(x = _, y = full_condition_data, by = c("replicate", "BRAF_mutant")) |> 
+  mutate("pS365_rel_to_full" = pS365_rel/pS365_at_full) |> 
+  filter(BRAF_mutant != "S365A") |> 
+  ggplot(aes(x = BRAF_mutant, y = pS365_rel_to_full, fill = condition)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.5, alpha = 0.9) +
+  scale_fill_manual(values = colors_conditions) +
+  labs(title = "mEGFP-BRAF pS365 - WB signal normalized to GFP levels and relative to full", 
+       x = "BRAF mutant", y = "Western Blot signal, relative to full", fill = "Condition") +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Helvetica", size = 6),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1)
+  ) +
+  facet_grid(~replicate)
+  
+#ggsave("WB_three_replicates_pS365_relative_to_full_condition.pdf", height = 4, width = 7)
+```
+
+
+```{r}
+starved_condition_data <- WB_data |> 
+  filter(! replicate %in% c(4,5)) |> 
+  filter(condition == "Starved") |> 
+  select(replicate, BRAF_mutant, "pS365_at_starved" = pS365_rel)
+rel_to_starved_all_rep <- WB_data |> 
+  filter(! replicate %in% c(4,5)) |>
+  inner_join(x = _, y = starved_condition_data, 
+             by = c("replicate", "BRAF_mutant")) |> 
+  mutate("pS365_rel_to_starved" = pS365_rel/pS365_at_starved) |> 
+  filter(BRAF_mutant != "S365A") |> 
+  filter(condition == "5 min EGF")
+rel_to_starved_avrg <- WB_data |> 
+  filter(! replicate %in% c(4,5)) |>
+  inner_join(x = _, y = starved_condition_data, 
+             by = c("replicate", "BRAF_mutant")) |> 
+  mutate("pS365_rel_to_starved" = pS365_rel/pS365_at_starved) |> 
+  filter(BRAF_mutant != "S365A") |> 
+  filter(condition == "5 min EGF") |> 
+  group_by(BRAF_mutant) |> 
+  reframe("mean" = mean(pS365_rel_to_starved))
+
+rel_to_starved_all_rep |> 
+  mutate("replicate" = as.character(replicate)) |> 
+  ggplot(aes(x = BRAF_mutant, y = pS365_rel_to_starved)) +
+  geom_bar(data = rel_to_starved_avrg, 
+           aes(x=BRAF_mutant, y = mean, fill = BRAF_mutant),
+           stat = "identity", position = "dodge", width = 0.5, alpha = 1) +
+  geom_point(aes(shape = replicate), size = 0.75, alpha = 0.75) +
+  scale_fill_manual(values = colors) +
+  labs(title = "mEGFP-BRAF pS365 - WB signal normalized to GFP levels and relative to starved", 
+       x = "BRAF mutant", y = "Western Blot signal, relative to starved") +
+  geom_hline(yintercept = 1, alpha = 0.5, linetype='dotted', color = "red") +
+  scale_y_continuous(breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  )
+
+ggsave("pS365_relative_to_starved_condition.pdf", height = 2.4, width = 3.1)
+
+```
+
+
+## Plot ERK/pERK signal
+```{r}
+colors <- c(
+  "untransfected cells" = "#6ca18f",
+  "WT" = "#335b8e", 
+  "AAAA" = "#fe6d7e", 
+  "A481F" = "#f19167", 
+  "AAAA A481F" = "#e8aa9d",
+  "R188L" = "#899DA4",
+  "S365A" = "#ffea59"
+  )
+
+
+temp_to_plot <- WB_data |> 
+  filter(replicate %in% c(4,5,1,2)) |> 
+  mutate("transfection_condition" = 
+           str_c(replicate, `BRAF plasmid DNA / ng`, transfection, stimulation, 
+                 sep = "_")) |> 
+  mutate("replicate" = as.character(replicate)) |> 
+  mutate("replicate" = factor(replicate, c("4","5","1","2"))) |> 
+  arrange(replicate)
+transfection_conditions_ordered <- temp_to_plot |> 
+  pull(transfection_condition) |> 
+  unique()
+
+temp_to_plot <- temp_to_plot |> 
+  mutate(transfection_condition = factor(transfection_condition, transfection_conditions_ordered))
+
+temp_to_plot |> 
+  ggplot(aes(x = condition, y = pERK_rel, 
+            color = BRAF_mutant , 
+            group = BRAF_mutant)) +
+  geom_point(size = 1.2) +
+  geom_line(alpha = 1) +
+  scale_color_manual(values = colors) +
+  scale_fill_manual(values = colors) +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 6),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  facet_grid(~transfection_condition) +
+  ylab("pERK1/2 normalized to ERK1/2") +
+  xlab("time point")
+
+ggsave("pERK_plots.pdf", height = 2.7, width = 7.5)
+
+```
+
+
+
+## Plot CRAF pS259 signal
+```{r}
+starved_condition_CRAF_data <- WB_data |> 
+  filter(! replicate %in% c(4,5)) |> 
+  filter(! is.na(CRAF_pS259)) |> 
+  filter(condition == "starved") |> 
+  select(replicate, BRAF_mutant, "pS259_at_starved" = CRAF_pS259)
+rel_to_starved_CRAF <- WB_data |> 
+  filter(! is.na(CRAF_pS259)) |> 
+  inner_join(x = _, y = starved_condition_CRAF_data, by = c("replicate", "BRAF_mutant")) |> 
+  mutate("pS259_rel_to_starved" = CRAF_pS259/pS259_at_starved) |> 
+  filter(condition == "5min_EGF")
+rel_to_starved_CRAF_avrg <- WB_data |> 
+  inner_join(x = _, y = starved_condition_CRAF_data, by = c("replicate", "BRAF_mutant")) |> 
+  mutate("pS259_rel_to_starved" = (CRAF_pS259)/pS259_at_starved) |> 
+  filter(condition == "5min_EGF") |> 
+  group_by(BRAF_mutant) |> 
+  reframe("mean" = mean(pS259_rel_to_starved))
+
+rel_to_starved_CRAF |> 
+  mutate("replicate" = as.character(replicate)) |> 
+  ggplot(aes(x = BRAF_mutant, y = pS259_rel_to_starved, fill = BRAF_mutant)) +
+  geom_bar(
+          data = rel_to_starved_CRAF_avrg, 
+           aes(x=BRAF_mutant, y = mean, fill = BRAF_mutant),
+           stat = "identity", position = "dodge", width = 0.5, alpha = 1
+           ) +
+  geom_point(aes(shape = replicate), size = 0.75, alpha = 0.75) +
+  scale_fill_manual(values = colors) +
+  labs(title = "CRAF pS259 - relative to starved", 
+       x = "BRAF mutant", y = "Western Blot signal normalized to total protein\nrelative to starved") +
+  geom_hline(yintercept = 1, alpha = 0.5, linetype='dotted', color = "red") +
+  scale_y_continuous(breaks = c(0, 0.25, 0.5, 0.75, 1)) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Helvetica", size = 6),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 1, vjust = 1),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(size = 0.1)
+  )
+
+ggsave("CRAF_plot.pdf", height = 2.7, width = 4)
+
+```
+
+
+

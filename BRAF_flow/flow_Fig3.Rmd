@@ -1,0 +1,516 @@
+---
+title: "BRAF signaling flow data analysis + paper figures"
+author: "Tina Perica"
+date: "2025-02-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = FALSE, warning = FALSE}
+library(flowCore)
+library(scales)
+library(tidyverse)
+```
+
+# README
+Input files for this code are:
+--- for pERK
+11.20_all_samples.csv
+11.21_all_samples.csv
+11.22_all_samples.csv
+--- for pMEK
+supplementary_controls/11.25_all_samples_live.csv
+
+
+## Define here how you order samples and conditions (important for plots)
+```{r}
+samples_in_order <- c("mEGFP-BRAF\nWT", 
+                      "mEGFP-BRAF\nAAAA", "mEGFP-BRAF\nA481F", "mEGFP-BRAF\nAAAA-A481F", 
+                      "untransfected", "GFP")
+conditions_in_order  <- c("Full", 
+                          "Starved", 
+                          "5 min EGF")
+colors <- c("mEGFP-BRAF\nWT" = "#335b8e", #"#275066",
+               "mEGFP-BRAF\nAAAA" = "#fe6d7e", # "#881f24",
+               "mEGFP-BRAF\nA481F" = "#f19167", # "#bb9d79",
+               "mEGFP-BRAF\nAAAA-A481F" ="#e8aa9d", # "#944c34",
+               "GFP" = "#6ca18f" # "#5f8065"
+               )
+```
+
+
+# Read, merge and tidy up in flow data 
+This has already been gated and filtered by area and height to remove cell debris and cell clumps in FlowJo
+(based on FSC_A, FSC_H, SSC_A, and SSC_H values)
+```{r, message=FALSE, warning=FALSE}
+data1 <- read_delim(file = "11.20_all_samples.csv") |> 
+  add_column("replicate" = "rep1") |> 
+  filter(! condition == "2nd_only")
+samples_data1 <- data1 |> 
+  pull(sample) |> unique()
+data2 <- read_delim(file = "11.21_all_samples.csv") |> 
+  add_column("replicate" = "rep1") |> 
+  mutate("replicate" = case_when(
+    sample %in% samples_data1 ~ "rep2",
+    .default = replicate
+  ))
+data3 <- read_delim(file = "11.22_all_samples.csv") |> 
+  add_column("replicate" = "rep3") |> 
+  mutate("replicate" = case_when(
+    sample %in% samples_data1 ~ "rep3",
+    .default = replicate
+  ))
+samples_data2 <- data2 |> 
+  pull(sample) |> unique()
+data <- data1 |> 
+  add_row(data2) |> 
+  add_row(data3)
+
+```
+
+# Flow cytometry data is usually plotted as biexponential transformed data
+The 'biexponential' is an over-parameterized inverse of the hyperbolic sine. The function to be inverted takes the form biexp(x) = a*exp(b*(x-w))-c*exp(-d*(x-w))+f with default parameters selected to correspond to the hyperbolic sine.
+From a package for flow analysis in R (Bioconductor), flowCore ( https://rdrr.io/bioc/flowCore/man/biexponentialTransform.html )
+we can use the logicle
+Background: https://docs.flowjo.com/flowjo/graphs-and-gating/gw-transform-overview/gw-transform-benefits/
+Logicle paper: PMID: 16604519
+Define the function so you can use it to transform the axes on the plot, or transform the data when binning
+```{r}
+make_logicle_trans <- function(channel = "GFP", positive_decades = 6) {
+  ff <- flowFrame(as.matrix(data %>% select(all_of(channel))))
+  # Estimate logicle transform
+  trans_list <- estimateLogicle(ff, channels = channel, m = positive_decades)
+  logicle_trans <- CytoExploreR_.estimateLogicle(ff, channel, 
+                                                 m = positive_decades)
+  params <- summary(logicle_trans[[channel]])
+  logicle_obj <- logicleTransform(
+    t = params$t,
+    m = params$m,
+    w = params$w,
+    a = params$a
+  )
+  inv_fun <- inverseLogicleTransform(logicle_obj)
+  trans_new(
+    name = "logicle",
+    transform = function(x) logicle_obj@.Data(x),
+    inverse = function(x) inv_fun(x),
+    domain = c(-1, 1e5),   # adjust based on your data
+    breaks = extended_breaks(n = 30),
+    format = format_format()
+  )
+}
+GFP_trans <- make_logicle_trans(channel = "GFP", positive_decades = 6)
+pERK_trans <- make_logicle_trans(channel = "pERK", positive_decades = 6)
+custom_breaks <- c(0, 10, 100, 1e3, 1e4, 1e5)
+```
+
+
+```{r}
+flow_data <- data |> 
+  mutate("sample" = 
+          case_when(
+            sample == "BRAFWT" ~ "mEGFP-BRAF\nWT",
+            sample == "BRAFAAAA" ~ "mEGFP-BRAF\nAAAA",
+            sample == "BRAF_481A" ~"mEGFP-BRAF\nA481F", 
+            sample == "BRAF_481A_AAAA" ~ "mEGFP-BRAF\nAAAA-A481F",
+            sample == "BRAF_R509H" ~"mEGFP-BRAF-R509H",
+            sample == "BRAF_R509H_AAAA" ~"mEGFP-BRAF-AAAA-R509H",
+            sample == "BRAF_D594G" ~"mEGFP-BRAF-D594G", 
+            sample == "BRAF_D594G_AAAA" ~"mEGFP-BRAF-AAAA-D594G", 
+            sample == "BRAF_K601E" ~"mEGFP-BRAF-K601E", 
+            sample == "BRAF_K601E_AAAA" ~"mEGFP-BRAF-AAAA-K601E",
+            sample == "BRAF_R509H_K601E" ~"mEGFP-BRAF-R509H-K601E", 
+            sample == 'non_transfected' ~ "untransfected",
+            sample == 'pMax_GFP' ~ "GFP",
+            .default = sample
+          )) |> 
+   mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starve" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF",
+    .default = condition
+  )) |> 
+  mutate("uniq_sample" = str_c(sample, "_", replicate)) |> 
+  filter(! condition == "transfectionctrl") |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  filter(sample %in% samples_in_order) |> 
+  mutate("sample" = factor(sample, samples_in_order)) |> 
+  arrange(sample, condition) |> 
+  filter(! is.na(condition))  ## this is to remove antibody control samples 
+```
+
+
+#### We are only plotting the samples for which we did replicates
+```{r}
+samples_with_replicates <- flow_data |> 
+  select(sample, replicate) |> 
+  unique() |> 
+  group_by(sample) |> 
+  reframe("Num_replicates" = n()) |> 
+  filter(Num_replicates > 1) |> 
+  pull(sample)
+flow_data <- flow_data |> 
+  filter(sample %in% samples_with_replicates)
+```
+
+# Check which samples and conditions and replicates we have
+```{r}
+flow_data |> 
+  select(sample, condition, replicate, uniq_sample) |> 
+  unique() |> 
+  arrange(sample, replicate, condition)
+```
+
+
+# Filter untransfected
+```{r}
+GFP_threshold <- flow_data |> 
+  filter(sample == "untransfected") |> 
+  arrange(desc(GFP)) |> 
+  pull(GFP) |> 
+  (\(.) quantile(., 0.999))()
+flow_data_exp <- flow_data |> 
+  filter(GFP > GFP_threshold)
+```
+
+
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+```{r}
+# Choose the channels
+channels <- c("GFP", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("GFP_logicle" = GFP, "pERK_logicle" = pERK)
+```
+
+
+# make GFP bins
+```{r}
+binned_by_GFP <- bind_cols(data_transformed, flow_data_exp) |> 
+  select(sample, replicate, uniq_sample, condition, 
+         GFP_logicle, 
+         GFP, pERK) |> 
+  mutate("GFP_bins" = cut(GFP_logicle, breaks = 50)) |> 
+  group_by(sample, replicate, condition, GFP_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_GFP" = median(GFP),
+          "count_points" = n()) |> 
+  arrange(sample, replicate, condition, GFP_bins) |> 
+  filter(count_points > 10)
+```
+
+
+```{r}
+samples_for_paper <- c("mEGFP-BRAF\nWT", "mEGFP-BRAF\nAAAA", "mEGFP-BRAF\nA481F", "mEGFP-BRAF\nAAAA-A481F","GFP")
+flow_data_exp_for_paper <- flow_data_exp |> 
+  filter(sample %in% samples_for_paper)
+```
+
+
+## Plots for paper (Figure 3 and then the 2 other replicates as supplementary)
+```{r}
+plot_single_replicate <- function(rep_num = "rep1") {
+  single_replicate <- flow_data_exp_for_paper |> 
+    filter(replicate == rep_num)
+  binned_by_GFP_single_replicate <- binned_by_GFP |> 
+    filter(sample %in% samples_for_paper) |> 
+    filter(replicate == rep_num)
+  single_replicate |> 
+    ggplot(aes(x = pERK, y = GFP)) +
+    geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+    stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+    scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+    geom_point(data = binned_by_GFP_single_replicate,
+           aes(x = median_pERK, y = median_GFP, color = sample), size = 0.3) +
+    geom_smooth(data = binned_by_GFP_single_replicate,
+          aes(x = median_pERK, y = median_GFP, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+    scale_color_manual(values = colors) +
+    facet_grid(sample~condition) +
+    theme_bw() +
+    theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 7),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    ) +
+    scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)") +
+    scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mEGFP-BRAF (logicle)")
+  ggsave(str_c("pERK_flow_",rep_num, ".pdf"), device = pdf, height = 6, width = 6)
+}
+plot_single_replicate(rep_num = "rep1")
+plot_single_replicate(rep_num = "rep2")
+plot_single_replicate(rep_num = "rep3")
+```
+
+
+## Plot just the WT (useful for talks/presentations)
+```{r}
+wt_rep2 <- flow_data_exp_for_paper |> 
+  filter(sample == "mEGFP-BRAF\nWT") |> 
+  filter(replicate == "rep2")
+
+binned_by_GFP_wt_rep2 <- binned_by_GFP |> 
+  filter(sample == "mEGFP-BRAF\nWT") |> 
+  filter(replicate == "rep2")
+wt_rep2 |> 
+  ggplot(aes(x = pERK, y = GFP)) +
+    geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+    stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+    scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+    geom_point(data = binned_by_GFP_wt_rep2,
+           aes(x = median_pERK, y = median_GFP, color = sample), size = 0.3) +
+    geom_smooth(data = binned_by_GFP_wt_rep2,
+          aes(x = median_pERK, y = median_GFP, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+    scale_color_manual(values = colors) +
+    facet_grid(~condition) +
+    theme_bw() +
+    theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 7),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    ) +
+    scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)") +
+    scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mEGFP-BRAF (logicle)")
+ggsave("WT_rep2_flow_for_talks.pdf", height = 2, width = 5)
+```
+
+## Plot just the AAAA (useful for talks/presentations)
+```{r}
+aaaa_rep2 <- flow_data_exp_for_paper |> 
+  filter(sample == "mEGFP-BRAF\nAAAA") |> 
+  filter(replicate == "rep2")
+
+binned_by_GFP_aaaa_rep2 <- binned_by_GFP |> 
+  filter(sample == "mEGFP-BRAF\nAAAA") |> 
+  filter(replicate == "rep2")
+aaaa_rep2 |> 
+  ggplot(aes(x = pERK, y = GFP)) +
+    geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+    stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+    scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+    geom_point(data = binned_by_GFP_aaaa_rep2,
+           aes(x = median_pERK, y = median_GFP, color = sample), size = 0.3) +
+    geom_smooth(data = binned_by_GFP_aaaa_rep2,
+          aes(x = median_pERK, y = median_GFP, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+    scale_color_manual(values = colors) +
+    facet_grid(~condition) +
+    theme_bw() +
+    theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 7),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    ) +
+    scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)") +
+    scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mEGFP-BRAF (logicle)")
+ggsave("AAAA_rep2_flow_for_talks.pdf", height = 2, width = 5)
+```
+
+
+## Plot just the transfected with GFP only (useful for talks/presentations)
+```{r}
+gfp_rep1 <- flow_data_exp_for_paper |> 
+  filter(sample == "GFP") |> 
+  filter(replicate == "rep1")
+
+binned_by_GFP_GFP_rep1 <- binned_by_GFP |> 
+  filter(sample == "GFP") |> 
+  filter(replicate == "rep1")
+gfp_rep1 |> 
+  ggplot(aes(x = pERK, y = GFP)) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+    stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+    scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+    geom_point(data = binned_by_GFP_GFP_rep1,
+           aes(x = median_pERK, y = median_GFP, color = sample), size = 0.3) +
+    geom_smooth(data = binned_by_GFP_GFP_rep1,
+          aes(x = median_pERK, y = median_GFP, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+    scale_color_manual(values = colors) +
+    facet_grid(sample~condition) +
+    theme_bw() +
+    theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 7),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    ) +
+    scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)") +
+    scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mEGFP-BRAF (logicle)")
+
+ggsave("GFP_rep1_flow_for_talks.pdf", height = 2, width = 5)
+```
+
+
+## Plot the pMEK data using the same 2d density plot
+```{r, message = FALSE, warning = FALSE}
+pmek_data <- read_csv("supplementary_controls/11.25_all_samples_live.csv")
+pmek_data <- pmek_data |> 
+  mutate("sample" = 
+          case_when(
+            sample == "BRAFWT" ~ "mEGFP-BRAF\nWT",
+            sample == "BRAFAAAA" ~ "mEGFP-BRAF\nAAAA",
+            sample == "BRAF_481A" ~"mEGFP-BRAF\nA481F", 
+            sample == "BRAF_481A_AAAA" ~ "mEGFP-BRAF\nAAAA-A481F",
+            sample == 'non_transfected' ~ "untransfected",
+            sample == 'pMax_GFP' ~ "GFP",
+            .default = sample
+          )) |> 
+  mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starve" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF",
+    .default = condition
+  )) |> 
+  filter(condition %in% conditions_in_order) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  mutate("sample" = factor(sample, samples_in_order)) |> 
+  arrange(sample, condition) |> 
+  filter(! is.na(condition))
+
+pmek_data |> 
+  pull(sample) |> unique()
+```
+
+# Filter out untransfected cells
+```{r}
+pmek_GFP_threshold <- pmek_data |> 
+  filter(sample == "untransfected") |> 
+  arrange(desc(GFP)) |> 
+  pull(GFP) |> 
+  (\(.) quantile(., 0.999))()
+pmek_flow_data_exp <- pmek_data |> 
+  filter(GFP > pmek_GFP_threshold) |> 
+  filter(!sample == "untransfected") |>
+  filter(!sample == "GFP")
+```
+
+## Transform function parameters
+```{r}
+# Choose the channels
+channels <- c("GFP", "pMEK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(pmek_flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+mek_data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("GFP_logicle" = GFP, "pMEK_logicle" = pMEK)
+```
+
+
+# make GFP bins
+```{r}
+pmek_binned_by_GFP <- bind_cols(mek_data_transformed, pmek_flow_data_exp) |> 
+  select(sample, condition, 
+         GFP_logicle, 
+         GFP, pMEK) |> 
+  mutate("GFP_bins" = cut(GFP_logicle, breaks = 50)) |> 
+  group_by(sample, condition, GFP_bins) |>
+  reframe("median_pMEK" = median(pMEK),
+          "median_GFP" = median(GFP),
+          "count_points" = n()) |> 
+  arrange(sample, condition, GFP_bins) |> 
+  filter(count_points > 10)
+```
+
+```{r}
+pmek_flow_data_exp |> 
+  ggplot(aes(x = pMEK, y = GFP)) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+          aes(fill = after_stat(level)), colour = "gray",
+          bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = pmek_binned_by_GFP,
+          aes(x = median_pMEK, y = median_GFP, color = sample), size = 0.3) +
+  geom_smooth(data = pmek_binned_by_GFP,
+          aes(x = median_pMEK, y = median_GFP, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+  scale_color_manual(values = colors) +
+  facet_grid(sample~condition) +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 7),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'none',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  ) +
+  scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+    name = "MAPK/ERK pathway activity - pMEK levels (logicle scale)") +
+  scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+    name = "mEGFP-BRAF (logicle)")
+
+ggsave("pMEK_2d_density_plots.pdf", height = 5, width = 6)
+```
+

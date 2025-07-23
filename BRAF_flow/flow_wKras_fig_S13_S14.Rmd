@@ -1,0 +1,503 @@
+---
+title: "BRAF_plus_KRAS_flow"
+author: "Tina Perica"
+date: "2025-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(flowCore)
+library(viridisLite)
+library(scales)
+library(tidyverse)
+```
+
+# README
+Input file
+KRAS_BRAF_flow/11.27_all_samples.csv
+
+
+
+```{r}
+all_samples <- c("mEGFP-BRAF\nWT", 
+                      "mEGFP-BRAF\nAAAA",
+                      "mEGFP-BRAF-WT +\nmCherry-KRAS",
+                      "mEGFP-BRAF-AAAA +\nmCherry-KRAS",
+                      "controls",
+                      "untransfected")
+
+figure_samples <- c("mEGFP-BRAF\nWT", 
+                      "mEGFP-BRAF\nAAAA",
+                      "mEGFP-BRAF-WT +\nmCherry-KRAS",
+                      "mEGFP-BRAF-AAAA +\nmCherry-KRAS")
+
+conditions_in_order <- c("Full", "Starved", "5 min EGF")
+
+colors <- c("mEGFP-BRAF\nWT" = "#335b8e", #"#275066",
+               "mEGFP-BRAF\nAAAA" = "#fe6d7e", # "#881f24",
+               "mEGFP-BRAF-AAAA +\nmCherry-KRAS" = "#fe6d7e", # "#bb9d79",
+               "mEGFP-BRAF-WT +\nmCherry-KRAS" ="#335b8e" # "#944c34"
+               )
+```
+
+```{r, message=FALSE, warning=FALSE}
+data <- read_csv("KRAS_BRAF_flow/11.27_all_samples.csv") 
+data |> 
+  pull(sample) |> unique()
+```
+
+
+```{r}
+make_logicle_trans <- function(channel = "GFP", positive_decades = 6) {
+  ff <- flowFrame(as.matrix(data %>% select(all_of(channel))))
+  # Estimate logicle transform
+  trans_list <- estimateLogicle(ff, channels = channel, m = positive_decades)
+  logicle_trans <- CytoExploreR_.estimateLogicle(ff, channel, 
+                                                 m = positive_decades)
+  params <- summary(logicle_trans[[channel]])
+  logicle_obj <- logicleTransform(
+    t = params$t,
+    m = params$m,
+    w = params$w,
+    a = params$a
+  )
+  inv_fun <- inverseLogicleTransform(logicle_obj)
+  trans_new(
+    name = "logicle",
+    transform = function(x) logicle_obj@.Data(x),
+    inverse = function(x) inv_fun(x),
+    domain = c(-1, 1e5),   # adjust based on your data
+    breaks = extended_breaks(n = 30),
+    format = format_format()
+  )
+}
+
+GFP_trans <- make_logicle_trans(channel = "GFP", positive_decades = 6)
+mCherry_trans <- make_logicle_trans(channel = "mCherry", positive_decades = 6)
+pERK_trans <- make_logicle_trans(channel = "pERK", positive_decades = 6)
+custom_breaks <- c(10, 100, 1e3, 1e4, 1e5)
+
+```
+
+
+```{r}
+flow_data <- data |> 
+  mutate("DNA amount" = 
+           case_when(
+            sample == "BRAFWT" ~ "1200",
+            sample == "BRAFAAAA" ~ "1200",
+            sample == "BRAFAAAA_KRAS_600" ~"600", 
+            sample == "BRAFAAAA_KRAS_750" ~ "750",
+            sample == "BRAFWT_KRAS_600" ~ "600",
+            sample == "BRAFWT_KRAS_750" ~ "750",
+            sample == 'non_transfected' ~ "0",
+            .default = "0"
+  )) |> 
+  mutate(sample =
+          case_when(
+            sample == "BRAFWT" ~ "mEGFP-BRAF\nWT",
+            sample == "BRAFAAAA" ~ "mEGFP-BRAF\nAAAA",
+            sample == "BRAFAAAA_KRAS_600" ~ "mEGFP-BRAF-AAAA +\nmCherry-KRAS",
+            sample == "BRAFAAAA_KRAS_750" ~ "mEGFP-BRAF-AAAA +\nmCherry-KRAS",
+            sample == "BRAFWT_KRAS_600" ~ "mEGFP-BRAF-WT +\nmCherry-KRAS",
+            sample == "BRAFWT_KRAS_750" ~ "mEGFP-BRAF-WT +\nmCherry-KRAS",
+            sample == 'non_transfected' ~ "untransfected",
+            .default = sample
+          )) |>
+   mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starve" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF",
+    .default = condition
+  )) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  filter(! is.na(condition)) |>  ## this is to remove antibody control samples
+  mutate("sample" = factor(sample, all_samples)) |> 
+  arrange(sample, condition)
+
+flow_data |> pull(condition) |> unique()
+```
+
+
+
+```{r}
+flow_data |> 
+  filter(sample %in% c("mEGFP-BRAF-WT +\nmCherry-KRAS", "mEGFP-BRAF-AAAA +\nmCherry-KRAS")) |> 
+  filter(condition == "Full") |> 
+  #filter(GFP > -10 & mCherry > -10) |> 
+  ggplot(aes(x = GFP, y = mCherry)) +
+  geom_point(size = 0.05, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 50, lwd = 0.1) +
+  scale_x_continuous(transform = GFP_trans, 
+                     breaks = custom_breaks, 
+                    name = "mEGFP-BRAF (logicle)") +
+  scale_y_continuous(transform = mCherry_trans, 
+                     breaks = custom_breaks,
+     name = "mCherry-KRAS (logicle)") +
+  theme_minimal() +
+  geom_abline(intercept = 0, slope = 1) +
+  facet_grid(~sample) +
+  labs(title = "mEGFP-BRAF vs mCherry-KRAS levels in co-transfected cells") +
+  theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(size = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      #panel.grid = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.1),
+      panel.grid.major.x = element_line(linewidth = 0.1),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    )
+ggsave("GFP-mCherry_coexpression.pdf", width = 4, height = 2.5)
+```
+
+
+
+```{r, echo = FALSE, eval = FALSE}
+flow_data |> 
+  mutate("transfection" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  ggplot(aes(x = GFP, y = mCherry)) +
+  geom_point(size = 0.05, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 50, lwd = 0.1) +
+  theme_bw() +
+  facet_wrap(~transfection, nrow = 3) +
+  scale_x_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "GFP (logicle)") +
+  scale_y_continuous(transform = mCherry_trans, breaks = custom_breaks,
+     name = "mCherry (logicle)") +
+  theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(size = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(size = 0.1),
+      #panel.grid = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.1),
+      panel.grid.major.x = element_line(linewidth = 0.1),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+    )
+```
+
+# Filter untransfected
+```{r}
+GFP_threshold <- flow_data |> 
+  filter(sample == "untransfected") |> 
+  arrange(desc(GFP)) |> 
+  pull(GFP) |> 
+  (\(.) quantile(., 0.999))()
+mCherry_threshold <- flow_data |> 
+   filter(sample == "untransfected") |> 
+  arrange(desc(mCherry)) |> 
+  pull(mCherry) |> 
+  (\(.) quantile(., 0.999))()
+
+flow_data_exp <- flow_data |> 
+  filter(GFP > GFP_threshold)
+```
+
+
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+```{r}
+# Choose the channels
+channels <- c("GFP", "mCherry", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("GFP_logicle" = GFP, "mCherry_logicle" = mCherry, "pERK_logicle" = pERK)
+```
+
+
+# make GFP bins
+```{r}
+binned_by_GFP <- bind_cols(data_transformed, flow_data_exp) |> 
+  filter(`DNA amount` == "1200" | `DNA amount` == "600") |> 
+  mutate("sample_uniq" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |>
+  select(sample, sample_uniq, condition, 
+         GFP_logicle, 
+         GFP, mCherry, pERK) |> 
+  mutate("GFP_bins" = cut(GFP_logicle, breaks = 50)) |> 
+  group_by(sample, sample_uniq, condition, GFP_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_GFP" = median(GFP),
+          "count_points" = n()) |> 
+  arrange(sample, sample_uniq, condition, GFP_bins) |> 
+  filter(count_points > 10)
+```
+
+
+# Plot pERK vs GFP
+```{r}
+flow_data_exp |> 
+  filter(sample %in% figure_samples) |> 
+  mutate("sample" = factor(sample, figure_samples)) |> 
+  filter(`DNA amount` == "1200" | `DNA amount` == "600") |> 
+  mutate("sample_uniq" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |> 
+  ggplot(aes(x = pERK, y = GFP)) +
+  #geom_hline(yintercept = 7.4, size = 0.15) +
+  #geom_vline(xintercept = 10.6, size = 0.15) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = binned_by_GFP,
+           aes(y = median_GFP, x = median_pERK, color = sample), size = 0.3) +
+  geom_smooth(data = binned_by_GFP,
+          aes(y = median_GFP, x = median_pERK, color = sample), 
+          span = 0.5, linewidth = 0.5, orientation = "y") +
+  scale_color_manual(values = colors) +
+  facet_grid(sample~condition) +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'none',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  ) +
+  scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+     name = "MAPK/ERK pathway activity - pERK levels (logicle scale)") +
+  scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mEGFP-BRAF (logicle)")
+ggsave("BRAF+KRAS_flow_BRAF_vs_pERK_biexponential.pdf", width = 6, height = 6)
+```
+
+
+
+
+
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+```{r}
+flow_data_exp <- flow_data |> 
+  filter(mCherry > mCherry_threshold)
+# Choose the channels
+channels <- c("GFP", "mCherry", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("GFP_logicle" = GFP, "mCherry_logicle" = mCherry, "pERK_logicle" = pERK)
+```
+# make mCherry bins
+```{r}
+binned_by_mCherry <- bind_cols(flow_data_exp, data_transformed) |> 
+  filter(`DNA amount` == "1200" | `DNA amount` == "600") |> 
+  filter(grepl("KRAS", sample)) |> 
+  mutate("sample_uniq" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |>
+  select(sample, sample_uniq, condition, 
+         mCherry_logicle, 
+         GFP, mCherry, pERK) |> 
+  mutate("mCherry_bins" = cut(mCherry_logicle, breaks = 50)) |> 
+  group_by(sample, sample_uniq, condition, mCherry_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_mCherry" = median(mCherry),
+          "count_points" = n()) |> 
+  arrange(sample, sample_uniq, condition, mCherry_bins) |> 
+  filter(count_points > 10)
+```
+
+
+# Plot pERK vs mCherry
+```{r}
+flow_data_exp |> 
+  filter(grepl("KRAS", sample)) |> 
+  filter(sample %in% figure_samples) |> 
+  mutate("sample" = factor(sample, figure_samples)) |> 
+  filter(`DNA amount` == "1200" | `DNA amount` == "600") |> 
+  mutate("sample_uniq" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |> 
+  ggplot(aes(x = pERK, y = mCherry)) +
+  #geom_hline(yintercept = 7.4, size = 0.15) +
+  #geom_vline(xintercept = 10.6, size = 0.15) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = binned_by_mCherry,
+           aes(x = median_pERK, y = median_mCherry, color = sample), size = 0.3) +
+  geom_smooth(data = binned_by_mCherry,
+           aes(x = median_pERK, y = median_mCherry, color = sample), 
+           span = 0.5, linewidth = 0.5, orientation = "y") +
+  scale_color_manual(values = colors) +
+  facet_grid(sample~condition) +
+  theme_bw() +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'none',
+    axis.line = element_line(linewidth = 0.1),
+    #panel.grid = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  ) +
+  scale_y_continuous(transform = GFP_trans, breaks = custom_breaks,
+      name = "mCherry-KRAS (logicle scale)") +
+  scale_x_continuous(transform = pERK_trans, breaks = custom_breaks,
+     name = "MAPK/ERK pathway activity - pERK levels (logicle scale)")
+
+ggsave("BRAF+KRAS_flow_KRAS_vs_pERK_biexponential.pdf", width = 7, height = 3)
+```
+
+
+
+
+
+## This is for 3D plot (GFP vs mCherry and pERK in color)
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+```{r}
+flow_data_exp <- flow_data |> 
+  filter(mCherry > mCherry_threshold) |> 
+  filter(GFP > GFP_threshold)
+# Choose the channels
+channels <- c("GFP", "mCherry", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("GFP_logicle" = GFP, "mCherry_logicle" = mCherry, "pERK_logicle" = pERK)
+```
+
+```{r}
+binned_by_all <- bind_cols(flow_data_exp, data_transformed) |> 
+  filter(`DNA amount` == "1200" | `DNA amount` == "600") |> 
+  filter(grepl("KRAS", sample)) |> 
+  mutate("sample_uniq" = str_c(sample, `DNA amount`, sep = "_")) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |>
+  select(sample, sample_uniq, condition, 
+         mCherry_logicle, GFP_logicle, pERK_logicle,
+         GFP, mCherry, pERK) |> 
+  mutate("mCherry_bins" = cut(mCherry_logicle, breaks = 15)) |> 
+  mutate("GFP_bins" = cut(GFP_logicle, breaks = 15)) |> 
+  group_by(sample, sample_uniq, condition, mCherry_bins, GFP_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_mCherry" = median(mCherry),
+          "median_GFP" = median(GFP),
+          "count_points" = n()) |> 
+  arrange(sample, sample_uniq, condition, mCherry_bins, GFP_bins) |> 
+  filter(count_points > 10)
+```
+
+```{r}
+binned_by_all |> 
+  ggplot(aes(x = median_mCherry, y = median_GFP, color = median_pERK, size = count_points)) +
+  geom_point() +
+  theme_bw() +
+  scale_color_viridis_b() +
+  facet_grid(condition~sample) +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  scale_x_continuous(
+    trans = mCherry_trans, breaks = custom_breaks,
+    name = "mCherry-KRAS (Logicle scale)"
+  ) +
+  scale_y_continuous(
+    trans = GFP_trans, breaks = custom_breaks,
+    name = "mEGFP-BRAF (Logicle scale)"
+  ) 
+
+ggsave("binned_GFP_and_mCherry_pERK_values_biexponential.pdf", height = 7, width = 8)
+```
+
+
+
+
+
+```{r}
+binned_by_all |> 
+  filter(condition == "5 min EGF") |> 
+  ggplot(aes(x = median_mCherry, y = median_GFP, color = median_pERK, size = count_points)) +
+  geom_point() +
+  theme_bw() +
+  scale_color_viridis_b() +
+  facet_grid(~sample) +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  scale_x_continuous(
+    trans = mCherry_trans, breaks = custom_breaks,
+    name = "mCherry-KRAS (Logicle scale)"
+  ) +
+  scale_y_continuous(
+    trans = GFP_trans, breaks = custom_breaks,
+    name = "mEGFP-BRAF (Logicle scale)"
+  ) 
+
+ggsave("binned_GFP_and_mCherry_pERK_values_EGF_only.pdf", height = 3, width = 7)
+```
+
+
