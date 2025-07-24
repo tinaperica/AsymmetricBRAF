@@ -1,0 +1,78 @@
+---
+title: "Untitled"
+output: html_document
+date: "2024-10-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+setwd("W:/Work/SHOC2_project/11.17_brafmuts_membrane_data/airy_scan_processed")
+
+# Define the folder path where your .czi files are located
+folder_path <- "W:/Work/SHOC2_project/11.17_brafmuts_membrane_data/airy_scan_processed"
+
+
+#identifiermap for 11.17
+
+identifier_map <- list(
+  "KRASG12D_BRAF_WT" = 2:14,
+  "KRASG12D_BRAF_AAAA" = 15:26,
+  "KRASG12D_BRAF_R188L" = 27:41,
+  "KRASWT_BRAF_R188L" = 42:49,
+  "KRASWT_BRAF_AAAA" = 50:57,
+  "KRASWT_BRAF_WT" = 58:63
+)
+```
+
+
+```{r}
+
+# Function to get the appropriate identifier based on the file number
+get_identifier <- function(file_number) {
+  for (identifier in names(identifier_map)) {
+    if (file_number %in% identifier_map[[identifier]]) {
+      return(identifier)
+    }
+  }
+  return(NULL)
+}
+
+# List all .czi files in the folder
+files <- list.files(folder_path, pattern = "\\.czi$", full.names = TRUE)
+
+# Iterate over each file
+for (file in files) {
+  # Extract the base name of the file
+  base_name <- basename(file)
+  
+  # Extract the image number using a regular expression
+  matches <- regmatches(base_name, regexec("New-(\\d+)-Airyscan Processing-\\d+\\.czi$", base_name))
+  
+  if (length(matches[[1]]) > 1) {
+    image_number <- as.integer(matches[[1]][2])
+    identifier <- get_identifier(image_number)
+    
+    if (!is.null(identifier)) {
+      # Construct the new file name
+      new_filename <- sprintf("%s_%02d.czi", identifier, image_number)
+      new_filepath <- file.path(folder_path, new_filename)
+      
+      # Rename the file
+      file.rename(file, new_filepath)
+      message(sprintf("Renamed %s to %s", base_name, new_filename))
+    } else {
+      message(sprintf("No identifier found for %s", base_name))
+    }
+  } else {
+    message(sprintf("Filename %s does not match the expected pattern", base_name))
+  }
+}
+
+
+```
+
+
+

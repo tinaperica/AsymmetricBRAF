@@ -1,0 +1,154 @@
+---
+title: "non_nuc_analyis"
+output: html_document
+date: "2025-02-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set libraries and colors
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+```
+
+```{r}
+colours <- c("WT" = "#335b8e", #"#275066",
+              "AAAA" = "#fe6d7e", # "#881f24",
+              "R188L" = "#899DA4" # "#5f8065"
+            )
+wesanderson::wes_palette("BottleRocket1")[4]
+
+#colours = c("#2D7DD2", "#9A275A", "#F45D01")
+```
+
+# read and process data
+```{r, message=FALSE, warning = FALSE}
+
+path <- "11.17_files/PCC_calculation_no_nuc/results_no_nuc"
+
+# Get list of CSV files
+file_list <- list.files(path, pattern = "*.csv", full.names = TRUE)
+
+# Function to read and process each file
+read_and_process <- function(file) {
+  df <- read_csv(file)  # Read file
+  
+  # Extract filename without path
+  filename <- basename(file)
+  filename <- tools::file_path_sans_ext(filename)  # Remove .csv extension
+  
+  # Extract KRAS, BRAF, and image number
+  matches <- str_match(filename, "(KRASWT|KRASG12D)_(BRAF_WT|BRAF_AAAA|BRAF_R188L)_(\\d+)")
+  
+  if (!is.na(matches[1])) {
+    df <- df %>%
+      mutate(
+        KRAS_type = matches[2],
+        BRAF_type = matches[3],
+        image_no = as.integer(matches[4])
+      )
+  }
+  
+  return(df)
+}
+
+# Read all files and combine into one dataframe
+all_images_nonuc <- map_dfr(file_list, read_and_process)
+
+
+all_images_nonuc <- all_images_nonuc %>% 
+  rename(mean_intensity_KRAS = Mean_Intensity_Channel1, mean_intensity_BRAF = Mean_Intensity_Channel2,
+         sum_intensity_KRAS = Sum_Intensity_Channel1, sum_intensity_BRAF = Sum_Intensity_Channel2,
+         Area = Area_Square_Microns)
+
+write.csv(all_images_nonuc, "11.17_files/PCC_calculation_no_nuc/all_images_nonuc_PCC.csv")
+```
+
+segmentation was done so that all membrane was included (ie more loosely) - this means that for two cells next to each other if one was transfected and other wasnt this will include the part of the membrane of the transfected cell- which will falsify results
+(also zero zero pixels correlate pretty well..)
+set threshold for minimum mean intensity values of both channels to filter for cells that are fully transfected
+
+assume: 20% transfected to get threshhold
+however - mean BRAF/KRAS intensity is not distributed the same across conditions (different localisations _ different values)
+do this per condition
+
+# Calculate the 80th percentile and filter data
+```{r}
+all_images_filter <- all_images_nonuc %>%
+  group_by(BRAF_type, KRAS_type) %>%
+  mutate(
+    BRAF_75th = quantile(mean_intensity_BRAF, 0.8),
+    KRAS_75th = quantile(mean_intensity_KRAS, 0.8),
+  )
+
+#remove massively overexpressing cells/missgemented
+#remove cut and too small cells with area filter
+# image 44 and 45 are the same image need to remove!
+all_images_filter <- all_images_filter %>%
+  filter(
+    mean_intensity_BRAF >= BRAF_75th,
+    mean_intensity_BRAF < 5000,
+    mean_intensity_KRAS < 5000,
+    mean_intensity_KRAS >= KRAS_75th ,
+    Area > 60,
+    image_no != 45
+  ) 
+
+write_csv(all_images_filter, "11.17_files/PCC_calculation_no_nuc/all_images_nonuc_filter_PCC.csv")
+```
+
+
+## Count how many cells per condition were used for the plotting in the end
+```{r}
+all_images_filter |> 
+  group_by(KRAS_type, BRAF_type) |> 
+  reframe("cell_number" = n())
+```
+
+# Control
+```{r}
+all_images_filter %>% 
+  ggplot(aes(mean_intensity_BRAF, Pearson_Correlation, colour = Area)) +
+geom_point() +
+  facet_grid(KRAS_type ~ BRAF_type) +
+  theme_minimal() +
+  scale_colour_viridis_c()
+```
+Still some outliers left - checked these in debug images - some of them are missegemente/including some small part of other cell, but nothing to do really? (except manually exclude)
+
+
+# Adjustable plotting
+```{r}
+all_images_filter %>% 
+    mutate(BRAF_type = factor(BRAF_type, 
+                            levels = c("BRAF_WT", "BRAF_AAAA", "BRAF_R188L"),
+                            labels = c("WT", "AAAA", "R188L"))) %>% 
+  mutate(KRAS_type = factor(KRAS_type, 
+                            levels = c("KRASWT", "KRASG12D"),
+                            labels = c("mCherry-KRAS WT", " mCherry-KRAS G12D"))) %>% 
+  ggplot(aes(BRAF_type, Pearson_Correlation, colour = BRAF_type)) +
+  geom_boxplot(outliers = F) +
+  geom_jitter(alpha = 0.35) +
+  facet_wrap( ~ KRAS_type) +
+  theme_classic() +
+  theme(
+    text = element_text(family = "Helvetica", size = 6),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    strip.text = element_text(size = 6),
+    axis.ticks = element_line(size = 0.05),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'none',
+    axis.line = element_line(linewidth = 0.1)
+  ) +
+  scale_colour_manual(values = colours) +
+  scale_y_continuous(breaks = seq(-1, 1, by = 0.2)) +
+  labs(title = "BRAF and KRAS Co-localization", 
+       x = "mEGFP-BRAF mutant", y = "Pearson Correlation Coefficient")
+
+ggsave("11.17_files/PCC_calculation_no_nuc/coloc_analysis_nonuc.pdf", width = 2.7, height = 3)
+
+```
+
