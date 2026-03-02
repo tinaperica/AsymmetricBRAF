@@ -1,3 +1,6 @@
+# Don't sync manually cleaned (transfected) flow data - it is cleaned in the code
+*transfected.csv
+
 # History files
 .Rhistory
 .Rapp.history
