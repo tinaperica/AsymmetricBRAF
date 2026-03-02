@@ -1,0 +1,64 @@
+---
+title: "BRAF_PISA_analysis"
+author: "Tina Perica"
+date: "2026-01-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(xml2)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(readr)
+library(tibble)
+```
+
+```{r}
+read_xml_robust <- function(path) {
+  x <- readChar(path, file.info(path)$size, useBytes = TRUE)
+
+  # Keep from the first '<' onward (drops any leading non-XML garbage)
+  pos <- regexpr("<", x, fixed = FALSE)[1]
+  if (pos == -1) stop("No '<' found in file. This does not look like XML.")
+  x2 <- substr(x, pos, nchar(x))
+
+  read_xml(x2)
+}
+
+extract_buriedsurfaceareascore <- function(xml_path) {
+  doc <- read_xml_robust(xml_path)
+
+  residue_nodes <- xml_find_all(doc, ".//RESIDUE[STRUCTURE and BURIEDSURFACEAREASCORE]")
+
+  tibble(node = residue_nodes) %>%
+    transmute(
+      STRUCTURE = map_chr(node, ~ xml_text(xml_find_first(.x, "./STRUCTURE")) |> str_trim()),
+      BURIEDSURFACEAREASCORE = map_chr(node, ~ xml_text(xml_find_first(.x, "./BURIEDSURFACEAREASCORE")) |> str_trim())
+    ) %>%
+    mutate(BURIEDSURFACEAREASCORE = suppressWarnings(as.integer(BURIEDSURFACEAREASCORE)))
+}
+
+```
+
+
+```{r}
+xml_path <- "./ePISA_asym_9RTR_AMPPNP_BC.xml"
+```
+
+
+```{r}
+xml_path <- file.choose()
+df_scores <- extract_buriedsurfaceareascore(xml_path)
+df_scores
+write_tsv(df_scores, "buriedsurfaceareascore.tsv")
+```
+
+
+
+
+

@@ -1,0 +1,83 @@
+---
+title: "parse_PISA_XML"
+author: "Tina Perica"
+date: "2026-01-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message = F}
+library(xml2)
+library(tidyverse)
+```
+
+```{r}
+# read_xml <- function(path) {
+#   x <- readChar(path, file.info(path)$size, useBytes = TRUE)
+#   pos <- regexpr("<", x, fixed = TRUE)[1]
+#   if (pos == -1) stop("No '<' found in file. This does not look like XML.")
+#   x2 <- substr(x, pos, nchar(x))
+#   read_xml(x2)
+# }
+```
+
+
+```{r}
+extract_buriedsurfaceareascore <- function(xml_path) {
+  doc <- read_xml(x = xml_path)
+  nodes <- xml_find_all(doc, ".//RESIDUE[STRUCTURE and BURIEDSURFACEAREASCORE]")
+  structures <- map_chr(
+    nodes,
+    ~ xml_text(xml_find_first(.x, "./STRUCTURE")) |> str_trim()
+  )
+  scores_chr <- map_chr(
+    nodes,
+    ~ xml_text(xml_find_first(.x, "./BURIEDSURFACEAREASCORE")) |> str_trim()
+  )
+  tibble(
+    STRUCTURE = structures,
+    BURIEDSURFACEAREASCORE = suppressWarnings(as.integer(scores_chr))
+  )
+}
+```
+
+
+```{r}
+xml_path <- "~/Nextcloud/BRaf/AsymmetricBRAF/PISA/ePISA_sym_4MNE_BC.xml"
+bsa_4mne <- extract_buriedsurfaceareascore(xml_path) |> 
+  mutate("structure" = "4MNE")
+xml_path <- "~/Nextcloud/BRaf/AsymmetricBRAF/PISA/ePISA_asym_9RTR_AMPPNP_BC.xml"
+bsa_9rtr <- extract_buriedsurfaceareascore(xml_path) |> 
+  mutate("structure" = "9RTR")
+xml_path <- "~/Nextcloud/BRaf/AsymmetricBRAF/PISA/ePISA_asym_9RTS_ADP_BC.xml"
+bsa_9rts <- extract_buriedsurfaceareascore(xml_path) |> 
+  mutate("structure" = "9RTS")
+```
+
+```{r}
+bsa <- rbind(bsa_4mne, bsa_9rtr) |> 
+  rbind(x = _, y = bsa_9rts) |> 
+  separate(col = STRUCTURE, into = c("chainAA", "res"), sep = " ") |> 
+  separate(col = chainAA, into = c("chain", "AA"), sep = ":") |> 
+  rename("BSA_score" = BURIEDSURFACEAREASCORE) |> 
+  mutate("percent_BSA" = BSA_score*10) |> 
+  mutate("PDB_chain" = str_c(structure, chain, sep = "_")) |> 
+  mutate("res_AA" = str_c(AA, res, sep = "_")) |> 
+  select(PDB_chain, res, AA, percent_BSA) |> 
+  filter(percent_BSA > 10) |> 
+  pivot_wider(names_from = PDB_chain, values_from = percent_BSA) |> 
+  arrange(as.integer(res)) |> 
+  {\(.) {replace(.,is.na(.),0)}}()
+
+write_tsv(bsa, file = 'pisa_BSA_summary.txt')
+```
+
+
+
+```{r}
+
+```
+
