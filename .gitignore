@@ -1,5 +1,12 @@
 # Don't sync manually cleaned (transfected) flow data - it is cleaned in the code
 *transfected.csv
+supplementary_controls/
+KRAS_BRAF_flow/
+HA_tag_data/
+mEGFP_data/
+deprecated_code/
+Landing_pad_data/
+
 
 # History files
 .Rhistory

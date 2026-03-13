@@ -1,0 +1,724 @@
+---
+title: "BRAF + KRAS flow - Figure S13"
+author: "Tina Perica"
+date: "2025-06-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=F, warning=F}
+library(flowCore)
+library(viridisLite)
+library(scales)
+library(tidyverse)
+```
+
+# README
+-- Input file for mEGFP-BRAF and mCherry-KRAS
+KRAS_BRAF_flow/11.27_all_samples.csv
+
+-- Input file for HA-BRAF and mCherry-KRAS
+KRAS_BRAF_flow/11.35_all_samples_single_cells.csv
+Note for the HA sample: important for setting transfection gates: must use HA_background for BRAF-HA expression, this is the only one with the correct background, other 2nd only controls do not have this.
+For mCherry we can use any non-transfected
+
+
+```{r}
+conditions_in_order  <- c("Full", 
+                          "Starved", 
+                          "5 min EGF")
+```
+
+
+
+```{r, message=FALSE, warning=FALSE}
+data_mEGFP <- read_csv("KRAS_BRAF_flow/11.27_all_samples.csv") |> 
+  add_column("tag" = "mEGFP") |> 
+  rename("BRAF" = GFP, "KRAS" = mCherry)
+data_HA <- read_csv("KRAS_BRAF_flow/11.35_all_samples_single_cells.csv") |> 
+   add_column("tag" = "HA")
+
+data <- rbind(data_mEGFP, data_HA)
+```
+
+
+
+```{r}
+make_logicle_trans <- function(channel, positive_decades = 6) {
+  ff <- flowFrame(as.matrix(data %>% select(all_of(channel))))
+  # Estimate logicle transform
+  trans_list <- estimateLogicle(ff, channels = channel, m = positive_decades)
+  logicle_trans <- CytoExploreR_.estimateLogicle(ff, channel, 
+                                                 m = positive_decades)
+  params <- summary(logicle_trans[[channel]])
+  logicle_obj <- logicleTransform(
+    t = params$t,
+    m = params$m,
+    w = params$w,
+    a = params$a
+  )
+  inv_fun <- inverseLogicleTransform(logicle_obj)
+  trans_new(
+    name = "logicle",
+    transform = function(x) logicle_obj@.Data(x),
+    inverse = function(x) inv_fun(x),
+    domain = c(-1, 1e5),   # adjust based on data
+    breaks = extended_breaks(n = 30),
+    format = format_format()
+  )
+}
+
+BRAF_trans <- make_logicle_trans(channel = "BRAF", positive_decades = 6)
+KRAS_trans <- make_logicle_trans(channel = "KRAS", positive_decades = 6)
+pERK_trans <- make_logicle_trans(channel = "pERK", positive_decades = 6)
+custom_breaks_pERK <- c(1e2, 1e3, 1e4, 1e5, 1e6)
+custom_breaks_BRAF <- c(1e2, 1e3, 1e4, 1e5)
+custom_breaks_KRAS <- c(1e2, 1e3, 1e4, 1e5)
+```
+
+
+```{r}
+flow_data_mEGFP <- data |> 
+  filter(tag == "mEGFP") |> 
+  mutate("DNA_amount" = 
+           case_when(
+            sample == "BRAFWT" ~ "1200",
+            sample == "BRAFAAAA" ~ "1200",
+            sample == "BRAFAAAA_KRAS_600" ~"600", 
+            sample == "BRAFAAAA_KRAS_750" ~ "750",
+            sample == "BRAFWT_KRAS_600" ~ "600",
+            sample == "BRAFWT_KRAS_750" ~ "750",
+            sample == 'non_transfected' ~ "0",
+            .default = "0"
+  )) |> 
+  mutate(sample =
+          case_when(
+            sample == "BRAFWT" ~ "mEGFP-BRAF\nWT",
+            sample == "BRAFAAAA" ~ "mEGFP-BRAF\nAAAA",
+            sample == "BRAFAAAA_KRAS_600" ~ "mEGFP-BRAF\nAAAA +\nmCherry-KRAS",
+            sample == "BRAFAAAA_KRAS_750" ~ "mEGFP-BRAF\nAAAA +\nmCherry-KRAS",
+            sample == "BRAFWT_KRAS_600" ~ "mEGFP-BRAF\nWT +\nmCherry-KRAS",
+            sample == "BRAFWT_KRAS_750" ~ "mEGFP-BRAF\nWT +\nmCherry-KRAS",
+            sample == 'non_transfected' ~ "untransfected",
+            .default = sample
+          )) |>
+   mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starve" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF",
+    .default = condition
+  )) |> 
+  filter(! (DNA_amount == "750")) |> 
+  select(-DNA_amount)
+
+```
+
+
+```{r}
+flow_data_HA <- data |> 
+  filter(tag == "HA") |> 
+  mutate(sample =
+          case_when(
+            sample == "BRAFWT" ~ "HA-BRAF\nWT",
+            sample == "BRAFAAAA" ~ "HA-BRAF\nAAAA",
+            sample == "BRAFAAAA_KRAS" ~ "HA-BRAF\nAAAA +\nmCherry-KRAS",
+            sample == "BRAFWT_KRAS" ~ "HA-BRAF\nWT +\nmCherry-KRAS",
+            sample == 'non_transfected' ~ "untransfected",
+            .default = sample
+          )) |>
+   mutate("condition" = case_when(
+    condition == "full" ~ "Full",
+    condition == "starve" ~ "Starved",
+    condition == "5min_EGF" ~ "5 min EGF",
+    .default = condition
+  ))
+
+```
+
+
+```{r}
+flow_data <- rbind(flow_data_HA, flow_data_mEGFP)
+```
+
+
+
+```{r}
+samples <- c("HA-BRAF\nWT +\nmCherry-KRAS", "HA-BRAF\nAAAA +\nmCherry-KRAS",
+             "mEGFP-BRAF\nWT +\nmCherry-KRAS", "mEGFP-BRAF\nAAAA +\nmCherry-KRAS")
+flow_data |> 
+  filter(sample %in% samples) |> 
+  filter(condition %in% conditions_in_order) |> 
+  mutate(sample = factor(sample, samples)) |> 
+  arrange(sample) |> 
+  ggplot(aes(x = BRAF, y = KRAS)) +
+  #geom_point(size = 0.05, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 15, lwd = 0.1) +
+  scale_x_continuous(transform = BRAF_trans, 
+                    breaks = custom_breaks_BRAF, 
+                    name = "mEGFP/HA-BRAF (logicle scale)",
+                    labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  scale_y_continuous(transform = KRAS_trans, 
+                    breaks = custom_breaks_KRAS,
+                    name = "mCherry-KRAS (logicle scale)",
+                    labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  theme_minimal() +
+  geom_abline(intercept = 0, slope = 1) +
+  facet_grid(~sample) +
+  labs(title = "HA/mEGFP-BRAF vs mCherry-KRAS levels in co-transfected cells") +
+  theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(size = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.1),
+      panel.grid.major.x = element_line(linewidth = 0.1),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    )
+ggsave("BRAF-KRAS_coexpression.pdf", width = 6, height = 2.5)
+```
+
+# Filter untransfected
+```{r}
+# BRAF_threshold_mEGFP <- flow_data |> 
+#   filter(tag == "mEGFP") |> 
+#   filter(sample == "untransfected") |> 
+#   arrange(desc(BRAF)) |> 
+#   pull(BRAF) |> 
+#   (\(.) quantile(., 0.999))()
+BRAF_threshold_HA <- flow_data |> 
+  filter(tag == "HA") |> 
+  filter(condition == "HA_background") |> 
+  arrange(desc(BRAF)) |> 
+  pull(BRAF) |> 
+  (\(.) quantile(., 0.99))()
+mCherry_KRAS_threshold <- flow_data |> 
+  filter(sample == "untransfected") |> 
+  arrange(desc(KRAS)) |> 
+  pull(KRAS) |> 
+  (\(.) quantile(., 0.999))()
+
+flow_data_exp_mEGFP <- flow_data |>
+  filter(tag == 'mEGFP') |>
+  filter(BRAF > BRAF_threshold_HA) # use HA for both (higher of the two)
+
+flow_data_exp_HA <- flow_data |>
+  filter(tag == 'HA') |>
+  filter(BRAF > BRAF_threshold_HA)
+
+flow_data_exp <- rbind(flow_data_exp_HA, flow_data_exp_mEGFP)
+```
+
+
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+
+## Transforming the HA-tag data
+```{r, eval = T}
+# Choose the channels
+channels <- c("BRAF", "KRAS", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp_HA %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed_HA <- as_tibble(exprs(ff_transformed)) |> 
+  select("BRAF_logicle" = BRAF, "KRAS_logicle" = KRAS, "pERK_logicle" = pERK)
+```
+
+
+## Transforming the mEGFP-tag data
+```{r, eval = T}
+# Choose the channels
+channels <- c("BRAF", "KRAS", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp_mEGFP %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed_mEGFP <- as_tibble(exprs(ff_transformed)) |> 
+  select("BRAF_logicle" = BRAF, "KRAS_logicle" = KRAS, "pERK_logicle" = pERK)
+```
+
+Transformed - bind together
+```{r, eval = TRUE}
+data_transformed <- rbind(data_transformed_HA, data_transformed_mEGFP)
+```
+
+```{r}
+samples_to_plot <- c("mEGFP-BRAF\nWT", 
+                    "mEGFP-BRAF\nAAAA",
+                    "mEGFP-BRAF\nWT +\nmCherry-KRAS",
+                    "mEGFP-BRAF\nAAAA +\nmCherry-KRAS",
+                    "HA-BRAF\nWT", 
+                    "HA-BRAF\nAAAA",
+                    "HA-BRAF\nWT +\nmCherry-KRAS",
+                    "HA-BRAF\nAAAA +\nmCherry-KRAS")
+```
+
+
+# make BRAF bins
+```{r}
+binned_by_BRAF <- bind_cols(data_transformed, flow_data_exp) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |>
+  select(sample, condition, 
+         BRAF_logicle, 
+         BRAF, KRAS, pERK) |> 
+  mutate("BRAF_bins" = cut(BRAF_logicle, breaks = 50)) |> 
+  group_by(sample, condition, BRAF_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_BRAF" = median(BRAF),
+          "count_points" = n()) |> 
+  filter(sample %in% samples_to_plot) |>  
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition, BRAF_bins) |> 
+  filter(count_points > 20)
+```
+
+
+```{r, eval = T}
+colors_for_figure <- c("mEGFP-BRAF\nWT" = "#335b8e", 
+            "mEGFP-BRAF\nAAAA" = "#fe6d7e", 
+            "mEGFP-BRAF\nAAAA +\nmCherry-KRAS" = "#fe6d7e", 
+            "mEGFP-BRAF\nWT +\nmCherry-KRAS" ="#335b8e",
+            "HA-BRAF\nWT" = "#335b8e", 
+            "HA-BRAF\nAAAA" = "#fe6d7e", 
+            "HA-BRAF\nAAAA +\nmCherry-KRAS" = "#fe6d7e", 
+            "HA-BRAF\nWT +\nmCherry-KRAS" ="#335b8e"
+)
+```
+
+
+
+
+# Plot BRAF vs pERK in +/- KRAS samples
+
+```{r}
+BRAF_lim <- 12000
+pERK_lim <- 9000
+flow_data_exp |> 
+  filter(sample %in% samples_to_plot) |>  
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition) |> 
+  ggplot(aes(x = BRAF, y = pERK)) +
+  scale_x_continuous(transform = BRAF_trans, breaks = custom_breaks_BRAF,
+      name = "HA/mEGFP-BRAF abundance (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  scale_y_continuous(transform = pERK_trans, breaks = custom_breaks_pERK,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = binned_by_BRAF,
+           aes(x = median_BRAF, y = median_pERK, color = sample), size = 0.3) +
+  geom_smooth(data = binned_by_BRAF,
+          aes(x = median_BRAF, y = median_pERK, color = sample), 
+          span = 0.75, se = FALSE, linewidth = 0.75) +
+  scale_color_manual(values = colors_for_figure) +
+  facet_grid(sample~condition) +
+  geom_hline(yintercept = pERK_lim, linetype = "dashed", lwd = 0.1) +
+  geom_vline(xintercept = BRAF_lim, linetype = "dashed", lwd = 0.1) +
+  theme_bw() +
+  theme(
+      text = element_text(family = "Helvetica", size = 6),
+      axis.title = element_text(size = 6),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  )
+ggsave("KRAS_coexp_BRAF_pERK_flow.pdf", width = 4, height = 5.8)
+```
+
+
+
+
+# Plot only HA samples, otherwise too repetitive and the figure is too large
+
+```{r}
+samples_to_plot <- c(
+                    "HA-BRAF\nWT", 
+                    "HA-BRAF\nAAAA",
+                    "HA-BRAF\nWT +\nmCherry-KRAS",
+                    "HA-BRAF\nAAAA +\nmCherry-KRAS")
+```
+
+
+# make BRAF bins
+```{r}
+binned_by_BRAF <- bind_cols(data_transformed, flow_data_exp) |> 
+  filter(! sample == "untransfected") |> 
+  filter(! sample == "controls") |>
+  select(sample, condition, 
+         BRAF_logicle, 
+         BRAF, KRAS, pERK) |> 
+  mutate("BRAF_bins" = cut(BRAF_logicle, breaks = 50)) |> 
+  group_by(sample, condition, BRAF_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_BRAF" = median(BRAF),
+          "count_points" = n()) |> 
+  filter(sample %in% samples_to_plot) |>  
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition, BRAF_bins) |> 
+  filter(count_points > 20)
+```
+
+
+```{r, eval = T}
+colors_for_figure <- c(
+            "HA-BRAF\nWT" = "#335b8e", 
+            "HA-BRAF\nAAAA" = "#fe6d7e", 
+            "HA-BRAF\nAAAA +\nmCherry-KRAS" = "#fe6d7e", 
+            "HA-BRAF\nWT +\nmCherry-KRAS" ="#335b8e"
+)
+```
+
+# Plot BRAF vs pERK in +/- KRAS samples
+
+```{r}
+BRAF_lim <- 12000
+pERK_lim <- 9000
+flow_data_exp |> 
+  filter(sample %in% samples_to_plot) |>  
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition) |> 
+  ggplot(aes(x = BRAF, y = pERK)) +
+  scale_x_continuous(transform = BRAF_trans, breaks = custom_breaks_BRAF,
+      name = "HA/mEGFP-BRAF abundance (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  scale_y_continuous(transform = pERK_trans, breaks = custom_breaks_pERK,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = binned_by_BRAF,
+           aes(x = median_BRAF, y = median_pERK, color = sample), size = 0.3) +
+  geom_smooth(data = binned_by_BRAF,
+          aes(x = median_BRAF, y = median_pERK, color = sample), 
+          span = 0.75, se = FALSE, linewidth = 0.75) +
+  scale_color_manual(values = colors_for_figure) +
+  facet_grid(sample~condition) +
+  geom_hline(yintercept = pERK_lim, linetype = "dashed", lwd = 0.1) +
+  geom_vline(xintercept = BRAF_lim, linetype = "dashed", lwd = 0.1) +
+  theme_bw() +
+  theme(
+      text = element_text(family = "Helvetica", size = 6),
+      axis.title = element_text(size = 6),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  )
+ggsave("KRAS_coexp_BRAF_pERK_flow_HA_only.pdf", width = 4, height = 3.2)
+```
+
+
+
+
+
+
+
+
+
+
+```{r}
+samples_to_plot <- c(
+                    "HA-BRAF\nWT +\nmCherry-KRAS",
+                    "HA-BRAF\nAAAA +\nmCherry-KRAS")
+```
+
+
+# make mCherry-KRAS bins
+```{r, eval = F}
+binned_by_KRAS <- bind_cols(flow_data_exp, data_transformed) |> 
+  filter(sample %in% samples_to_plot) |> 
+  select(sample, condition, 
+         KRAS_logicle, 
+         BRAF, KRAS, pERK) |> 
+  mutate("KRAS_bins" = cut(KRAS_logicle, breaks = 50)) |> 
+  group_by(sample, condition, KRAS_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_KRAS" = median(KRAS),
+          "count_points" = n()) |> 
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition, KRAS_bins) |> 
+  filter(count_points > 20)
+```
+
+
+```{r, eval = T}
+colors_for_figure <- c(
+            "HA-BRAF\nAAAA +\nmCherry-KRAS" = "#fe6d7e", 
+            "HA-BRAF\nWT +\nmCherry-KRAS" ="#335b8e"
+)
+```
+
+
+# Plot pERK vs mCherry
+```{r}
+KRAS_lim <- 12000
+pERK_lim <- 9000
+flow_data_exp |> 
+  filter(sample %in% samples_to_plot) |>  
+  filter(condition %in% conditions_in_order) |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  mutate("condition" = factor(condition, conditions_in_order)) |> 
+  arrange(sample, condition) |> 
+  ggplot(aes(x = KRAS, y = pERK)) +
+  scale_x_continuous(transform = KRAS_trans, breaks = custom_breaks_KRAS,
+      name = "mCherry-KRAS abundance (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  scale_y_continuous(transform = pERK_trans, breaks = custom_breaks_pERK,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  geom_point(size = 0.05, alpha = 0.2, color = "gray") +
+  stat_density_2d(geom = "polygon", contour = TRUE,
+                aes(fill = after_stat(level)), colour = "gray",
+                bins = 20, lwd = 0.1) +
+  scale_fill_distiller(palette = "Blues", direction = 1, name = "point density") +
+  geom_point(data = binned_by_KRAS,
+           aes(x = median_KRAS, y = median_pERK, color = sample), size = 0.3) +
+  geom_smooth(data = binned_by_KRAS,
+          aes(x = median_KRAS, y = median_pERK, color = sample), 
+          span = 0.75, se = FALSE, linewidth = 0.75) +
+  scale_color_manual(values = colors_for_figure) +
+  facet_grid(sample~condition) +
+  geom_hline(yintercept = pERK_lim, linetype = "dashed", lwd = 0.1) +
+  geom_vline(xintercept = KRAS_lim, linetype = "dashed", lwd = 0.1) +
+  theme_bw() +
+  theme(
+      text = element_text(family = "Helvetica", size = 6),
+      axis.title = element_text(size = 6),
+      axis.text = element_text(size = 6),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+  )
+ggsave("KRAS_coexp_KRAS_pERK_flow_HA_samples_only.pdf", width = 4, height = 2)
+```
+
+
+
+
+
+
+## This is for 3D plot (HA-BRAF vs mCherry-KRAS and pERK in color)
+
+## Transform
+To make the bins, you need to transform the data - otherwise the curve won't match
+```{r}
+flow_data_exp <- flow_data |> 
+  filter(KRAS > mCherry_KRAS_threshold) |> 
+  filter(BRAF > BRAF_threshold_HA)
+# Choose the channels
+channels <- c("BRAF", "KRAS", "pERK")
+# Convert data to flowFrame
+ff <- flowFrame(as.matrix(flow_data_exp %>% select(all_of(channels))))
+# Estimate logicle transform automatically
+logicle_trans <- estimateLogicle(ff, channels = channels, m = 6)
+# Apply transform to flowFrame
+ff_transformed <- transform(ff, logicle_trans)
+data_transformed <- as_tibble(exprs(ff_transformed)) |> 
+  select("BRAF_logicle" = BRAF, "KRAS_logicle" = KRAS, "pERK_logicle" = pERK)
+```
+
+```{r}
+binned_by_all <- bind_cols(flow_data_exp, data_transformed) |> 
+  select(sample, condition, 
+         KRAS_logicle, BRAF_logicle, pERK_logicle,
+         BRAF, KRAS, pERK) |> 
+  mutate("KRAS_bins" = cut(KRAS_logicle, breaks = 15)) |> 
+  mutate("BRAF_bins" = cut(BRAF_logicle, breaks = 15)) |> 
+  group_by(sample, condition, KRAS_bins, BRAF_bins) |>
+  reframe("median_pERK" = median(pERK),
+          "median_KRAS" = median(KRAS),
+          "median_BRAF" = median(BRAF),
+          "count_points" = n()) |> 
+  arrange(sample, condition, KRAS_bins, BRAF_bins) |> 
+  filter(count_points > 10)
+```
+
+
+```{r}
+samples_to_plot <- c(
+                    "HA-BRAF\nWT +\nmCherry-KRAS",
+                    "HA-BRAF\nAAAA +\nmCherry-KRAS")
+```
+
+```{r}
+binned_by_all |> 
+  filter(sample %in% samples_to_plot) |> 
+  filter(condition == "5 min EGF") |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  arrange(sample) |> 
+  ggplot(aes(x = median_KRAS, y = median_BRAF, color = median_pERK, size = count_points)) +
+  geom_point() +
+  theme_bw() +
+  scale_color_viridis_b() +
+  facet_grid(~sample) +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  scale_x_continuous(
+    trans = KRAS_trans, breaks = custom_breaks_KRAS,
+    name = "mCherry-KRAS (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) +
+  scale_y_continuous(
+    trans = BRAF_trans, breaks = custom_breaks_BRAF,
+    name = "HA-BRAF (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) 
+
+ggsave("binned_HA-BRAF_and_mCherry-KRAS_pERK_values_logicle.pdf", height = 3, width = 7)
+```
+
+```{r}
+samples_to_plot <- c(
+                    "mEGFP-BRAF\nWT +\nmCherry-KRAS",
+                    "mEGFP-BRAF\nAAAA +\nmCherry-KRAS")
+```
+
+```{r}
+binned_by_all |> 
+  filter(sample %in% samples_to_plot) |> 
+  filter(condition == "5 min EGF") |> 
+  mutate("sample" = factor(sample, samples_to_plot)) |> 
+  arrange(sample) |> 
+  ggplot(aes(x = median_KRAS, y = median_BRAF, color = median_pERK, size = count_points)) +
+  geom_point() +
+  theme_bw() +
+  scale_color_viridis_b() +
+  facet_grid(~sample) +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  scale_x_continuous(
+    trans = KRAS_trans, breaks = custom_breaks_KRAS,
+    name = "mCherry-KRAS (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) +
+  scale_y_continuous(
+    trans = BRAF_trans, breaks = custom_breaks_BRAF,
+    name = "HA-BRAF (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) 
+
+ggsave("binned_mEGFP-BRAF_and_mCherry-KRAS_pERK_values_logicle.pdf", height = 3, width = 7)
+```
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+binned_by_all |> 
+  filter(condition == "5 min EGF") |> 
+  ggplot(aes(x = median_mCherry, y = median_GFP, color = median_pERK, size = count_points)) +
+  geom_point() +
+  theme_bw() +
+  scale_color_viridis_b() +
+  facet_grid(~sample) +
+  theme(
+    text = element_text(family = "Helvetica", size = 7),
+    axis.title = element_text(size = 7),
+    axis.text = element_text(size = 6),
+    axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+    axis.ticks = element_line(linewidth = 0.07),
+    axis.ticks.length = unit(0.05, 'cm'),
+    legend.position = 'right',
+    axis.line = element_line(linewidth = 0.1),
+    panel.grid.major.y = element_line(linewidth = 0.15),
+    panel.grid.major.x = element_line(linewidth = 0.15),
+    panel.border = element_rect(fill = NA, linewidth = 0.2),
+    strip.background = element_rect(color = "gray", fill = "white", size = 0.3)
+  ) +
+  scale_x_continuous(
+    trans = mCherry_trans, breaks = custom_breaks,
+    name = "mCherry-KRAS (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) +
+  scale_y_continuous(
+    trans = GFP_trans, breaks = custom_breaks,
+    name = "mEGFP-BRAF (Logicle scale)",
+    labels = function(x) parse(text = paste0("10^", log10(x)))
+  ) 
+
+ggsave("binned_GFP_and_mCherry_pERK_values_EGF_only.pdf", height = 3, width = 7)
+```
+
+
