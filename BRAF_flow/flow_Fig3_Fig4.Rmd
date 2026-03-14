@@ -29,6 +29,8 @@ BRAF_flow/HA_tag_data/11.28_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.29_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.32_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.33_all_samples_single_cells.csv
+BRAF_flow/HA_tag_data/11.34_all_samples_single_cells.csv
+
 
 ## Define here how you order samples and conditions (important for plots)
 ```{r}
@@ -137,16 +139,45 @@ data7 <- read_delim(file = "HA_tag_data/11.33_all_samples_single_cells.csv") |>
   ))
 HA_samples_data4 <- data7 |> 
   pull(sample) |> unique()
+
+
+
+data8 <- read_delim(file = "HA_tag_data/11.34_all_samples_single_cells.csv") |>
+  add_column("replicate" = "HA_rep1") |>
+  add_column("tag" = "HA") |>
+  mutate("sample" = case_when(
+    sample == "HA_BRAF_WT" ~ "HA_BRAFWT",
+    .default = sample
+  )) |> 
+  mutate("replicate" = case_when(
+    (sample %in% HA_samples_data1 & 
+       (!sample %in% HA_samples_data2) & (!sample %in% HA_samples_data3) & (!sample %in% HA_samples_data4)) ~ "HA_rep2",
+    (sample %in% HA_samples_data2 & 
+       (!sample %in% HA_samples_data1) & (!sample %in% HA_samples_data3) & (!sample %in% HA_samples_data4)) ~ "HA_rep2",
+    (sample %in% HA_samples_data3 & 
+       (!sample %in% HA_samples_data1) & (!sample %in% HA_samples_data2) & (!sample %in% HA_samples_data4)) ~ "HA_rep2",
+    (sample %in% HA_samples_data4 & 
+       (!sample %in% HA_samples_data1) & (!sample %in% HA_samples_data2) & (!sample %in% HA_samples_data3)) ~ "HA_rep2",
+    (sample %in% HA_samples_data1 & sample %in% HA_samples_data2 & 
+       (!sample %in% HA_samples_data3) & (!sample %in% HA_samples_data4)) ~ "HA_rep3",
+    (sample %in% HA_samples_data1 & sample %in% HA_samples_data3 & 
+       (!sample %in% HA_samples_data2) & (!sample %in% HA_samples_data4)) ~ "HA_rep3",
+    (sample %in% HA_samples_data2 & sample %in% HA_samples_data3 & 
+       (!sample %in% HA_samples_data1) & (!sample %in% HA_samples_data4)) ~ "HA_rep3",
+    (sample %in% HA_samples_data2 & sample %in% HA_samples_data3 & sample %in% HA_samples_data1) ~ "HA_rep4",
+    .default = replicate
+  ))
 data <- data1 |> 
   add_row(data2) |> 
   add_row(data3) |> 
   add_row(data4) |> 
   add_row(data5) |> 
   add_row(data6) |> 
-  add_row(data7) |> 
+  add_row(data7) |>
+  add_row(data8) |> 
   filter(BRAF < 2e5)
 
-rm(data1, data2, data3, data4, data5, data6, data7)
+rm(data1, data2, data3, data4, data5, data6, data7, data8)
 ```
 
 
@@ -570,7 +601,7 @@ plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
                       colors = colors_Fig3,
                       x_axis_label = "HA-BRAF abundance (logicle scale)", 
                       plot_prefix = "Fig3_pERK_flow_HA_tag_",
-                      plot_height = 6, plot_width = 6)
+                      plot_height = 5.2, plot_width = 6)
 
 plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
                       samples_in_order = samples_in_order_Fig3, rep_num = "HA_rep2", 
@@ -578,7 +609,7 @@ plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
                       colors = colors_Fig3,
                       x_axis_label = "HA-BRAF abundance (logicle scale)", 
                       plot_prefix = "FigS9_pERK_flow_HA_tag_",
-                      plot_height = 6, plot_width = 6)
+                      plot_height = 5.2, plot_width = 6)
 
 ```
 
@@ -609,13 +640,13 @@ plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
 ```
 
 
-## New Fig.5 
+## New Fig.4 
 panel A: illustration of chosen mutants
 panel B: flow data
 panel C in vitro kinase assay
 
 ```{r}
-samples_in_order_Fig5 <- c(
+samples_in_order_Fig4 <- c(
   "HA-BRAF\nR506E",
   "HA-BRAF\nR506A",
   "HA-BRAF\nD565R" ,
@@ -623,30 +654,99 @@ samples_in_order_Fig5 <- c(
   "HA-BRAF\nK570A",
   "HA-BRAF\nK570E"
   )
-colors_Fig5 <- c(
+colors_Fig4 <- c(
   "HA-BRAF\nR506E" = "#4caf7d",
   "HA-BRAF\nR506A" = "#2d7a52",
-  "HA-BRAF\nD565R" = "#f4a261",
+  "HA-BRAF\nD565R" = "#F2A13D",
   "HA-BRAF\nK570R" = "#b799d4",
   "HA-BRAF\nK570A" = "#8a5db8",
   "HA-BRAF\nK570E" = "#5e3485"
 )
 
 plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
-                      samples_in_order = samples_in_order_Fig5, rep_num = "HA_rep1", 
+                      samples_in_order = samples_in_order_Fig4, rep_num = "HA_rep1", 
                       BRAF_lim = 12000, pERK_lim = 9000,
-                      colors = colors_Fig5,
+                      colors = colors_Fig4,
                       x_axis_label = "HA-BRAF abundance (logicle scale)", 
-                      plot_prefix = "Fig5_pERK_flow_HA_tag_",
+                      plot_prefix = "Fig4_pERK_flow_HA_tag_",
                       plot_height = 8, plot_width = 4)
 
 
 plot_single_replicate(flow_data = flow_data_exp, binned_data = binned_by_BRAF,
-                      samples_in_order = samples_in_order_Fig5, rep_num = "HA_rep2", 
+                      samples_in_order = samples_in_order_Fig4, rep_num = "HA_rep2", 
                       BRAF_lim = 12000, pERK_lim = 9000,
-                      colors = colors_Fig5,
+                      colors = colors_Fig4,
                       x_axis_label = "HA-BRAF abundance (logicle scale)", 
                       plot_prefix = "FigS11_pERK_flow_HA_tag_",
-                      plot_height = 4, plot_width = 6)
+                      plot_height = 8, plot_width = 6)
 ```
+
+
+
+```{r}
+all_samples <- c(
+  "HA-BRAF\nWT",
+  "HA-BRAF\nAAAA", 
+  "HA-BRAF\nA481F", 
+  "HA-BRAF\nAAAA-A481F",
+  "HA-BRAF\nR506E",
+  "HA-BRAF\nR506A",
+  "HA-BRAF\nD565R" ,
+  "HA-BRAF\nK570R" ,
+  "HA-BRAF\nK570A",
+  "HA-BRAF\nK570E"
+  )
+all_colors <- c(
+   "HA-BRAF\nWT" = "#335b8e",
+  "HA-BRAF\nAAAA" = "#fe6d7e", 
+  "HA-BRAF\nA481F" = "#f19167", 
+  "HA-BRAF\nAAAA-A481F" ="#e8aa9d",
+  "HA-BRAF\nR506E" = "#4caf7d",
+  "HA-BRAF\nR506A" = "#2d7a52",
+  "HA-BRAF\nD565R" = "#F2A13D",
+  "HA-BRAF\nK570R" = "#b799d4",
+  "HA-BRAF\nK570A" = "#8a5db8",
+  "HA-BRAF\nK570E" = "#5e3485"
+)
+```
+
+
+```{r}
+binned_by_BRAF |> 
+  filter(median_BRAF > 5000 & median_BRAF < 70000) |> 
+  filter(sample %in% all_samples) |> 
+  mutate(sample = factor(sample, all_samples)) |> 
+  arrange(sample) |> 
+  filter(condition == "5 min EGF") |> 
+  filter(replicate == "HA_rep1") |> 
+  ggplot(aes(x = median_BRAF, y = median_pERK, color = sample)) +
+  #geom_point() +
+  geom_smooth(span = 0.75, se = FALSE, linewidth = 1) +
+  scale_color_manual(values = all_colors) +
+  scale_x_continuous(transform = BRAF_trans, breaks = custom_breaks_BRAF,
+      name = "variant HA-BRAF abundance (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+    scale_y_continuous(transform = pERK_trans, breaks = custom_breaks_pERK,
+      name = "MAPK/ERK pathway activity - pERK levels (logicle scale)",
+      labels = function(x) parse(text = paste0("10^", log10(x)))) +
+  facet_grid(~condition) +
+  theme_bw() +
+    theme(
+      text = element_text(family = "Helvetica", size = 7),
+      axis.title = element_text(size = 7),
+      axis.text = element_text(size = 7),
+      axis.text.x = element_text(angle = 30, hjust = 0.5, vjust = 0.5),
+      axis.ticks = element_line(linewidth = 0.07),
+      axis.ticks.length = unit(0.05, 'cm'),
+      #legend.position = 'none',
+      axis.line = element_line(linewidth = 0.1),
+      panel.grid.major.y = element_line(linewidth = 0.15),
+      panel.grid.major.x = element_line(linewidth = 0.15),
+      panel.border = element_rect(fill = NA, linewidth = 0.2),
+      strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
+    )
+ggsave("5min_EGF_flow_curves_only.pdf", width = 3, height = 2.5) 
+  
+```
+
 
