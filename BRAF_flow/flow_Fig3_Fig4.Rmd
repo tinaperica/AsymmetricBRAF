@@ -25,12 +25,13 @@ BRAF_flow/mEGFP_data/11.22_all_samples.csv
 --- for pMEK
 BRAF_flow/supplementary_controls/11.25_all_samples_live.csv
 ## Data with HA-BRAF
-BRAF_flow/HA_tag_data/11.28_all_samples_single_cells.csv
+BRAF_flow/HA_tag_data/11.28_all_samples.csv
 BRAF_flow/HA_tag_data/11.29_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.32_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.33_all_samples_single_cells.csv
 BRAF_flow/HA_tag_data/11.34_all_samples_single_cells.csv
 
+The raw data can be downloaded from Mendeley: https://data.mendeley.com/preview/pjj89wjgw4?a=1e58915d-abb3-4520-9f1c-37002f25b157
 
 ## Define here how you order samples and conditions (important for plots)
 ```{r}

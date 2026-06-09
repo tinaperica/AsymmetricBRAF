@@ -24,7 +24,7 @@ KRAS_BRAF_flow/11.27_all_samples.csv
 KRAS_BRAF_flow/11.35_all_samples_single_cells.csv
 Note for the HA sample: important for setting transfection gates: must use HA_background for BRAF-HA expression, this is the only one with the correct background, other 2nd only controls do not have this.
 For mCherry we can use any non-transfected
-
+The raw data can be downloaded from Mendeley: https://data.mendeley.com/preview/pjj89wjgw4?a=1e58915d-abb3-4520-9f1c-37002f25b157
 
 ```{r}
 conditions_in_order  <- c("Full", 
