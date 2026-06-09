@@ -167,9 +167,10 @@ flow_data |>
                     name = "mCherry-KRAS (logicle scale)",
                     labels = function(x) parse(text = paste0("10^", log10(x)))) +
   theme_minimal() +
-  geom_abline(intercept = 0, slope = 1) +
+  geom_abline(intercept = 0, slope = 1, lwd = 0.1) +
   facet_grid(~sample) +
   labs(title = "HA/mEGFP-BRAF vs mCherry-KRAS levels in co-transfected cells") +
+  coord_cartesian(clip = "on") +
   theme(
       text = element_text(family = "Helvetica", size = 7),
       axis.title = element_text(size = 7),
@@ -184,8 +185,9 @@ flow_data |>
       panel.border = element_rect(fill = NA, linewidth = 0.2),
       strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
     )
-ggsave("BRAF-KRAS_coexpression.pdf", width = 6, height = 2.5)
+#ggsave("BRAF-KRAS_coexpression.pdf", width = 4.2, height = 2.3)
 ```
+
 
 # Filter untransfected
 ```{r}
@@ -352,7 +354,7 @@ flow_data_exp |>
       panel.border = element_rect(fill = NA, linewidth = 0.2),
       strip.background = element_rect(color = "gray", fill = "white", linewidth = 0.3)
   )
-ggsave("KRAS_coexp_BRAF_pERK_flow.pdf", width = 4, height = 5.8)
+ggsave("KRAS_coexp_BRAF_pERK_flow.pdf", width = 6.2, height = 5.3)
 ```
 
 

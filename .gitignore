@@ -6,7 +6,8 @@ HA_tag_data/
 mEGFP_data/
 deprecated_code/
 Landing_pad_data/
-
+PISA/pisa_BSA_short_for_rebuttal*
+BRAF_flow/*.pdf
 
 # History files
 .Rhistory
